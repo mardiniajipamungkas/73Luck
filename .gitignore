@@ -1,34 +1,141 @@
-# Gradle files
-.gradle/
-build/
+import React, { useEffect, useMemo, useRef, useState } from "react"; import { motion, AnimatePresence } from "framer-motion"; import { Button } from "@/components/ui/button"; import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"; import { Slider } from "@/components/ui/slider"; import { Badge } from "@/components/ui/badge"; import { RefreshCcw, Minus, Plus, Play, Dice5, RotateCw } from "lucide-react";
 
-# Local configuration file (sdk path, etc)
-local.properties
+// Demo Slot React — no real money, for education only // Tailwind is assumed available. This file default-exports the component.
 
-# Log/OS Files
-*.log
+const SYMBOLS = [ { emoji: "🍒", weight: 6, payout: 2 }, { emoji: "🍋", weight: 5, payout: 3 }, { emoji: "🍇", weight: 4, payout: 5 }, { emoji: "🔔", weight: 3, payout: 8 }, { emoji: "⭐", weight: 2, payout: 15 }, { emoji: "💎", weight: 1, payout: 30 }, ] as const;
 
-# Android Studio generated files and folders
-captures/
-.externalNativeBuild/
-.cxx/
-*.aab
-*.apk
-output-metadata.json
+type SymbolItem = typeof SYMBOLS[number];
 
-# IntelliJ
-*.iml
-.idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
+function useWeightedBag(symbols: readonly SymbolItem[]) { return useMemo(() => { const bag: SymbolItem[] = []; symbols.forEach((s) => { for (let i = 0; i < s.weight; i++) bag.push(s); }); return bag; }, [symbols]); }
 
-# Keystore files
-*.jks
-*.keystore
+function sample<T>(arr: readonly T[]) { return arr[Math.floor(Math.random() * arr.length)]; }
 
-# Google Services (e.g. APIs or Firebase)
-google-services.json
+function Reel({ value, spinning }: { value: string; spinning: boolean }) { return ( <motion.div className="h-28 rounded-2xl border bg-gradient-to-b from-slate-800/60 to-slate-900/60 flex items-center justify-center text-5xl shadow-inner" animate={spinning ? { boxShadow: "inset 0 0 24px rgba(0,0,0,.45)" } : { boxShadow: "inset 0 0 0 rgba(0,0,0,0)" }} transition={{ duration: 0.2, repeat: spinning ? Infinity : 0, repeatType: "reverse" }} aria-live="polite" > <AnimatePresence mode="wait"> <motion.span key={value} initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} transition={{ duration: 0.15 }} > {value} </motion.span> </AnimatePresence> </motion.div> ); }
 
-# Android Profiling
-*.hprof
+export default function DemoSlotReact() { const bag = useWeightedBag(SYMBOLS);
+
+const [score, setScore] = useState(100); const [bet, setBet] = useState(10); const [spinning, setSpinning] = useState(false); const [result, setResult] = useState<string[]>(["🍒", "🍋", "🍇"]); const [message, setMessage] = useState<string>("Mainkan untuk melihat kombinasi. Tidak ada uang sungguhan."); const [history, setHistory] = useState<{ r: string[]; win: number }[]>([]);
+
+// Simple RTP estimator over last N rounds const N = 30; const rtp = useMemo(() => { const last = history.slice(-N); const wager = last.length * bet; // approx, since bet can vary, we store win only const totalBet = last.reduce((acc) => acc + bet, 0); // rough const totalWin = last.reduce((acc, x) => acc + x.win, 0); if (last.length === 0) return 0; return Math.round((totalWin / (totalBet || 1)) * 100); }, [history, bet]);
+
+const animTimer = useRef<number | null>(null); const filler = ["🍉", "🍀", "7️⃣", "🍊", "🍎", "🍈"]; const [tick, setTick] = useState(0);
+
+useEffect(() => { if (!spinning) return; const id = window.setInterval(() => setTick((t) => t + 1), 60); animTimer.current = id; return () => window.clearInterval(id); }, [spinning]);
+
+useEffect(() => { if (spinning) { setResult((prev) => prev.map((_, i) => filler[(tick + i) % filler.length])); } }, [tick]);
+
+function randSymbol(): SymbolItem { return sample(bag); }
+
+function computeWin(symbolsDrawn: SymbolItem[]): number { let win = 0; const [a, b, c] = symbolsDrawn; if (a.emoji === b.emoji && b.emoji === c.emoji) { win = a.payout * bet; } else if (a.emoji === b.emoji || a.emoji === c.emoji || b.emoji === c.emoji) { const map = new Map<string, SymbolItem>(); [a, b, c].forEach((s) => map.set(s.emoji, s)); for (const s of [a, b, c]) { const count = [a, b, c].filter((x) => x.emoji === s.emoji).length; if (count === 2) { win = Math.round(map.get(s.emoji)!.payout * bet * 0.5); break; } } } return win; }
+
+async function spin() { if (spinning || score < bet) return; setSpinning(true); setMessage("Memutar…");
+
+await new Promise((res) => setTimeout(res, 900 + Math.random() * 500));
+if (animTimer.current) window.clearInterval(animTimer.current);
+
+const draws = [randSymbol(), randSymbol(), randSymbol()];
+const emojis = draws.map((d) => d.emoji);
+const win = computeWin(draws);
+
+setResult(emojis);
+setScore((s) => s - bet + win);
+setHistory((h) => [...h, { r: emojis, win }].slice(-100));
+setMessage(win > 0 ? `Menang +${win} (payout berdasar simbol)` : `Belum beruntung −${bet}`);
+setSpinning(false);
+
+}
+
+function resetAll() { setScore(100); setBet(10); setHistory([]); setMessage("Di‑reset. Ini hanya simulasi hiburan tanpa uang."); }
+
+const canSpin = !spinning && score >= bet;
+
+return ( <div className="min-h-[100dvh] w-full bg-[radial-gradient(1200px_600px_at_20%_10%,#1a2249,#0b1020)] text-slate-100 flex items-center justify-center p-4"> <div className="w-full max-w-4xl space-y-4"> <header className="text-center"> <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Demo Slot – Hiburan & Edukasi</h1> <p className="text-slate-300 text-sm mt-1">Simulasi tanpa uang nyata. Pelajari peluang & logika game.</p> </header>
+
+<Card className="bg-gradient-to-b from-slate-900/70 to-slate-950/70 border-slate-800/60 shadow-2xl rounded-2xl">
+      <CardHeader className="pb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Dice5 className="h-5 w-5" />
+            Status Permainan
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="rounded-full">Skor: <span className="font-bold ml-1">{score}</span></Badge>
+            <Badge variant="secondary" className="rounded-full">Taruhan: <span className="font-bold ml-1">{bet}</span></Badge>
+            <Badge variant="outline" className="rounded-full border-slate-600 text-slate-300">RTP ~92% (simulasi)</Badge>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {/* Reels */}
+        <div className="grid grid-cols-3 gap-3 p-4 rounded-xl border border-slate-800/60 bg-gradient-to-b from-slate-900/60 to-slate-950/60 shadow-inner">
+          {result.map((v, i) => (
+            <Reel key={i} value={v} spinning={spinning} />
+          ))}
+        </div>
+
+        {/* Controls */}
+        <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Button onClick={spin} disabled={!canSpin} className="rounded-2xl px-5 py-6 text-base font-bold shadow-xl">
+              <Play className="mr-2 h-5 w-5" /> Putar
+            </Button>
+            <Button variant="secondary" onClick={() => setBet((b) => Math.max(5, b - 5))} disabled={spinning} className="rounded-2xl">
+              <Minus className="h-5 w-5" />
+            </Button>
+            <Button variant="secondary" onClick={() => setBet((b) => Math.min(50, b + 5))} disabled={spinning} className="rounded-2xl">
+              <Plus className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" onClick={resetAll} disabled={spinning} className="rounded-2xl">
+              <RefreshCcw className="h-5 w-5" /> Reset
+            </Button>
+          </div>
+
+          <div className="w-full md:w-80">
+            <label className="text-xs text-slate-400">Atur Taruhan</label>
+            <Slider value={[bet]} min={5} max={50} step={5} onValueChange={(v) => setBet(v[0])} className="mt-2" />
+          </div>
+        </div>
+
+        {/* Message */}
+        <p className={`text-sm text-center ${message.includes("Menang") ? "text-emerald-400" : message.includes("Belum") ? "text-rose-400" : "text-slate-300"}`}>
+          {message}
+        </p>
+
+        {/* History + RTP estimate */}
+        <div className="grid md:grid-cols-2 gap-3">
+          <div className="rounded-xl border border-slate-800/60 p-3 bg-slate-900/40">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-slate-300">Riwayat Terakhir</span>
+              <Button variant="ghost" size="sm" onClick={() => setHistory([])}>
+                <RotateCw className="h-4 w-4 mr-1" /> Bersihkan
+              </Button>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-xl">
+              {history.slice(-12).reverse().map((h, idx) => (
+                <div key={idx} className="rounded-lg border border-slate-800/60 py-2 bg-slate-900/50">
+                  <div className="leading-none">{h.r.join(" ")}</div>
+                  <div className={`text-xs mt-1 ${h.win > 0 ? "text-emerald-400" : "text-slate-400"}`}>{h.win > 0 ? "+" + h.win : "−" + bet}</div>
+                </div>
+              ))}
+              {history.length === 0 && (
+                <div className="col-span-3 text-sm text-slate-400 py-6">Belum ada riwayat.</div>
+              )}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800/60 p-3 bg-slate-900/40">
+            <div className="text-sm text-slate-300 mb-2">Perkiraan RTP (last {N} putaran)</div>
+            <div className="text-4xl font-bold">{rtp}%</div>
+            <p className="text-xs text-slate-400 mt-1">RTP ini hanya perkiraan berdasarkan riwayat singkat, tidak akurat secara statistik.</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+
+    <p className="text-center text-xs text-slate-400">Dibuat untuk tujuan edukasi. Perjudian uang nyata dilarang di banyak wilayah.</p>
+  </div>
+</div>
+
+); }
+
+
